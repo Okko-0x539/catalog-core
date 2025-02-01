@@ -1,0 +1,43 @@
+#!/bin/sh
+
+if test ! -f "workdir/build/nginx_vmware-x86_64"; then
+    echo "No kernel file workdir/build/nginx_vmware-x86_64." 1>&2
+    echo "Did you run ./build.vmware.x86_64 ?" 1>&2
+    exit 1
+fi
+
+# Pack filesystem as an initial ramdisk CPIO file.
+rm -f initrd.cpio
+../repos/unikraft/support/scripts/mkcpio initrd.cpio ./rootfs/
+
+echo 'nginx netdev.ip=172.44.0.2/24:172.44.0.1::: vfs.fstab=[ \"initrd0:/:extract::ramfs=1:\" ] -- -c /nginx/conf/nginx.conf' > "workdir/build/kernel.cmdline"
+
+../repos/unikraft/support/scripts/mkukimg -f iso -k workdir/build/nginx_vmware-x86_64 -a X64 -p vmware -b grub -i initrd.cpio -c workdir/build/kernel.cmdline -o workdir/build/nginx_vmware-x86_64.iso
+
+CPU_CORES=$(nproc)
+
+cat > "workdir/build/Unikraft.vmx" <<EOL
+.encoding = "UTF-8"
+config.version = "8"
+virtualHW.version = "16"
+displayName = "Unikraft"
+guestOS = "other64"
+memsize = "8192"
+numvcpus = "$CPU_CORES"
+scsi0.present = "TRUE"
+scsi0.virtualDev = "lsilogic"
+
+ethernet0.present = "TRUE"
+ethernet0.connectionType = "bridged"
+ethernet0.virtualDev = "vmxnet3"
+
+ide0:0.present = "TRUE"
+ide0:0.fileName = "workdir/build/nginx_vmware-x86_64.iso"
+ide0:0.deviceType = "cdrom"
+ide0:0.startConnected = "TRUE"
+
+# Boot settings
+bios.bootOrder = "cdrom"
+EOL
+
+vmrun -T ws start "workdir/build/Unikraft.vmx"
