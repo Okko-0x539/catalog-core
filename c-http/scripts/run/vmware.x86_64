@@ -40,7 +40,7 @@ guestOS = "other-64"
 
 ide0:0.present = "TRUE"
 ide0:0.deviceType = "cdrom-image"
-ide0:0.fileName = "$PWD\workdir\build\c-http_vmware-x86_64.iso"
+ide0:0.fileName = "$PWD/workdir/build/c-http_vmware-x86_64.iso"
 
 floppy0.present = "FALSE"
 
