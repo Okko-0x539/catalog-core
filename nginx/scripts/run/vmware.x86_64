@@ -6,38 +6,56 @@ if test ! -f "workdir/build/nginx_vmware-x86_64"; then
     exit 1
 fi
 
+# Configure VMware virtual network
+if grep -q "VNET_9" "/etc/vmware/networking"; then
+    echo "Info: 'VNET_9' configuration already exists in /etc/vmware/networking."
+else
+    sudo vmware-networks --stop
+    echo "answer VNET_9_DHCP no" | sudo tee -a /etc/vmware/networking > /dev/null
+    echo "answer VNET_9_HOSTONLY_NETMASK 255.255.255.0" | sudo tee -a /etc/vmware/networking > /dev/null
+    echo "answer VNET_9_HOSTONLY_SUBNET 172.44.0.0" | sudo tee -a /etc/vmware/networking > /dev/null
+    echo "answer VNET_9_NAT yes" | sudo tee -a /etc/vmware/networking > /dev/null
+    echo "answer VNET_9_VIRTUAL_ADAPTER yes" | sudo tee -a /etc/vmware/networking > /dev/null
+    echo "Configuration for 'VNET_9' has been successfully added to /etc/vmware/networking."
+    sudo vmware-networks --start
+fi
+
 # Pack filesystem as an initial ramdisk CPIO file.
 rm -f initrd.cpio
 ../repos/unikraft/support/scripts/mkcpio initrd.cpio ./rootfs/
 
-echo 'nginx netdev.ip=172.44.0.2/24:172.44.0.1::: vfs.fstab=[ \"initrd0:/:extract::ramfs=1:\" ] -- -c /nginx/conf/nginx.conf' > "workdir/build/kernel.cmdline"
+# Configure kernel command line
+echo 'nginx netdev.ip=172.44.0.2/24:172.44.0.1::: -- -c /nginx/conf/nginx.conf' > "workdir/build/kernel.cmdline"
 
+# Create ISO image
 ../repos/unikraft/support/scripts/mkukimg -f iso -k workdir/build/nginx_vmware-x86_64 -a X64 -p vmware -b grub -i initrd.cpio -c workdir/build/kernel.cmdline -o workdir/build/nginx_vmware-x86_64.iso
 
-CPU_CORES=$(nproc)
-
+# Create VMware VMX config file
 cat > "workdir/build/Unikraft.vmx" <<EOL
 .encoding = "UTF-8"
 config.version = "8"
 virtualHW.version = "16"
-displayName = "Unikraft"
-guestOS = "other64"
-memsize = "8192"
-numvcpus = "$CPU_CORES"
-scsi0.present = "TRUE"
-scsi0.virtualDev = "lsilogic"
 
-ethernet0.present = "TRUE"
-ethernet0.connectionType = "bridged"
-ethernet0.virtualDev = "vmxnet3"
+
+displayName = "Unikraft"
+numvcpus = "4"
+memsize = "256"
+guestOS = "other-64"
 
 ide0:0.present = "TRUE"
-ide0:0.fileName = "workdir/build/nginx_vmware-x86_64.iso"
-ide0:0.deviceType = "cdrom"
-ide0:0.startConnected = "TRUE"
+ide0:0.deviceType = "cdrom-image"
+ide0:0.fileName = "$PWD\workdir\build\nginx_vmware-x86_64.iso"
 
-# Boot settings
-bios.bootOrder = "cdrom"
+floppy0.present = "FALSE"
+
+pciBridge0.present = "TRUE"
+pciBridge0.virtualDev = "pcieRootPort"
+
+ethernet0.present = "TRUE"
+ethernet0.virtualDev = "vmxnet3"
+ethernet0.connectionType = "custom"
+ethernet0.vnet = "/dev/vmnet9"
+
 EOL
 
 vmrun -T ws start "workdir/build/Unikraft.vmx"
